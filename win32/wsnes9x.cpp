@@ -291,6 +291,7 @@ INT_PTR CALLBACK DlgCheatSearch(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lPara
 INT_PTR CALLBACK DlgCheatSearchAdd(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK DlgCreateMovie(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK DlgOpenMovie(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
+HRESULT CALLBACK EnumModesCallback( LPDDSURFACEDESC lpDDSurfaceDesc, LPVOID lpContext);
 
 VOID CALLBACK HotkeyTimer( UINT idEvent, UINT uMsg, DWORD dwUser, DWORD dw1, DWORD dw2);
 
@@ -635,6 +636,8 @@ std::vector<dMode> dm;
 /*****************************************************************************/
 void DoAVIOpen(const TCHAR* filename);
 void DoAVIClose(int reason);
+void RestoreGUIDisplay ();
+void RestoreSNESDisplay ();
 void FreezeUnfreeze (int slot, bool8 freeze);
 void CheckDirectoryIsWritable (const char *filename);
 static void CheckMenuStates ();
@@ -1383,7 +1386,7 @@ int HandleKeyMessage(WPARAM wParam, LPARAM lParam)
 	switch (wParam)
 	{
 		case VK_ESCAPE:
-			if(GUI.FullScreen && !GUI.EmulateFullscreen)
+			if(GUI.outputMethod!=DIRECTDRAW && GUI.FullScreen && !GUI.EmulateFullscreen)
 				ToggleFullScreen();
 			else
 				if (GetMenu (GUI.hWnd) == NULL)
@@ -1661,6 +1664,7 @@ LRESULT CALLBACK WinProc(
 			break;
 		case ID_FILE_WRITE_AVI:
 			{
+				RestoreGUIDisplay ();  //exit DirectX
 				OPENFILENAME  ofn;
 				TCHAR  szFileName[MAX_PATH];
 				TCHAR  szPathName[MAX_PATH];
@@ -1683,6 +1687,7 @@ LRESULT CALLBACK WinProc(
 				{
 					DoAVIOpen(szFileName);
 				}
+				RestoreSNESDisplay ();// re-enter after dialog
 			}
 			break;
 		case ID_FILE_STOP_AVI:
@@ -1694,6 +1699,7 @@ LRESULT CALLBACK WinProc(
 			break;
 		case ID_FILE_MOVIE_PLAY:
 			{
+				RestoreGUIDisplay ();  //exit DirectX
 				OpenMovieParams op;
 				memset(&op, 0, sizeof(op));
 				if(DialogBoxParam(g_hInst, MAKEINTRESOURCE(IDD_OPENMOVIE), hWnd, DlgOpenMovie, (LPARAM)&op) &&
@@ -1718,10 +1724,12 @@ LRESULT CALLBACK WinProc(
 						MessageBox( hWnd, err_string, SNES9X_INFO, MB_OK);
 					}
 				}
+				RestoreSNESDisplay ();// re-enter after dialog
 			}
 			break;
 		case ID_FILE_MOVIE_RECORD:
 			{
+				RestoreGUIDisplay ();  //exit DirectX
 				OpenMovieParams op;
 				memset(&op, 0, sizeof(op));
 				if(DialogBoxParam(g_hInst, MAKEINTRESOURCE(IDD_CREATEMOVIE), hWnd, DlgCreateMovie, (LPARAM)&op) &&
@@ -1748,6 +1756,7 @@ LRESULT CALLBACK WinProc(
 						MessageBox( hWnd, err_string, SNES9X_INFO, MB_OK);
 					}
 				}
+				RestoreSNESDisplay ();// re-enter after dialog
 			}
 			break;
 		case IDM_SNES_JOYPAD:
@@ -1867,9 +1876,15 @@ LRESULT CALLBACK WinProc(
 			//end turbo
 		case ID_OPTIONS_DISPLAY:
 			{
+				RestoreGUIDisplay ();
+				
 				if(GUI.FullScreen)
 					ToggleFullScreen();
 				DialogBox(g_hInst, MAKEINTRESOURCE(IDD_NEWDISPLAY), hWnd, DlgFunky);
+				
+				SwitchToGDI();
+
+				RestoreSNESDisplay ();
 
 				S9xGraphicsDeinit();
 				S9xSetWinPixelFormat ();
@@ -1886,11 +1901,15 @@ LRESULT CALLBACK WinProc(
 			}
 
 		case ID_OPTIONS_JOYPAD:
+            RestoreGUIDisplay ();
 			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_INPUTCONFIG), hWnd, DlgInputConfig);
+            RestoreSNESDisplay ();
             break;
 
 		case ID_OPTIONS_KEYCUSTOM:
+            RestoreGUIDisplay ();
 			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_KEYCUSTOM), hWnd, DlgHotkeyConfig);
+            RestoreSNESDisplay ();
             break;
 
 		case ID_EMULATION_BACKGROUNDINPUT:
@@ -1908,6 +1927,8 @@ LRESULT CALLBACK WinProc(
 					break;
 				}
 #endif
+				RestoreGUIDisplay ();
+
 				const bool ok = (1 <= DialogBoxParam(g_hInst, MAKEINTRESOURCE(IDD_MULTICART), GUI.hWnd, DlgMultiROMProc, (LPARAM)NULL));
 
 				if(ok)
@@ -1946,6 +1967,8 @@ LRESULT CALLBACK WinProc(
 					}
 					Settings.Paused = false;
 				}
+
+				RestoreSNESDisplay ();
 			}
 			break;
 
@@ -1953,9 +1976,13 @@ LRESULT CALLBACK WinProc(
 			{
 				TCHAR filename [_MAX_PATH];
 
+				RestoreGUIDisplay ();
+
 				if(DoOpenRomDialog(filename)) {
 					LoadROM(filename);
 				}
+
+				RestoreSNESDisplay ();
 			}
 			break;
 
@@ -1995,6 +2022,7 @@ LRESULT CALLBACK WinProc(
 			}
             break;
         case ID_NETPLAY_CONNECT:
+            RestoreGUIDisplay ();
 			if(1<=DialogBoxParam(g_hInst, MAKEINTRESOURCE(IDD_NETCONNECT), hWnd, DlgNetConnect,(LPARAM)&hostname))
 
             {
@@ -2008,6 +2036,8 @@ LRESULT CALLBACK WinProc(
                     S9xClearPause (PAUSE_NETPLAY_CONNECT);
                 }
             }
+
+			RestoreSNESDisplay ();
             break;
         case ID_NETPLAY_DISCONNECT:
             if (Settings.NetPlay)
@@ -2024,6 +2054,7 @@ LRESULT CALLBACK WinProc(
         case ID_NETPLAY_OPTIONS:
 			{
 				bool8 old_netplay_server = Settings.NetPlayServer;
+				RestoreGUIDisplay ();
 				if(1<=DialogBox(g_hInst, MAKEINTRESOURCE(IDD_NPOPTIONS), hWnd, DlgNPOptions))
 				{
 					if (old_netplay_server != Settings.NetPlayServer)
@@ -2033,6 +2064,7 @@ LRESULT CALLBACK WinProc(
 						EnableServer (!Settings.NetPlayServer);
 					}
 				}
+				RestoreSNESDisplay ();
 				break;
 			}
         case ID_NETPLAY_SYNC:
@@ -2159,10 +2191,12 @@ LRESULT CALLBACK WinProc(
             break;
         case ID_SOUND_OPTIONS:
 			{
+				RestoreGUIDisplay ();
 				if(1<=DialogBoxParam(g_hInst,MAKEINTRESOURCE(IDD_SOUND_OPTS),hWnd,DlgSoundConf, (LPARAM)&Settings))
 				{
 					ReInitSound();
 				}
+				RestoreSNESDisplay ();
 				break;
 			}
 		case ID_WINDOW_FULLSCREEN:
@@ -2311,12 +2345,15 @@ LRESULT CALLBACK WinProc(
 			FreezeUnfreeze (9, TRUE);
 			break;
 		case ID_CHEAT_ENTER:
+			RestoreGUIDisplay ();
 			S9xRemoveCheats ();
 			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_CHEATER), hWnd, DlgCheater);
 			S9xSaveCheatFile (S9xGetFilename (".cht", CHEAT_DIR));
 			S9xApplyCheats ();
+			RestoreSNESDisplay ();
 			break;
 		case ID_CHEAT_SEARCH:
+			RestoreGUIDisplay ();
 			if(!cheatSearchHWND) // create and show non-modal cheat search window
 			{
 				cheatSearchHWND = CreateDialog(g_hInst, MAKEINTRESOURCE(IDD_CHEAT_SEARCH), hWnd, DlgCheatSearch); // non-modal/modeless
@@ -2326,10 +2363,13 @@ LRESULT CALLBACK WinProc(
 			{
 				SetActiveWindow(cheatSearchHWND);
 			}
+			RestoreSNESDisplay ();
 			break;
 		case ID_CHEAT_SEARCH_MODAL:
+			RestoreGUIDisplay ();
 			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_CHEAT_SEARCH), hWnd, DlgCheatSearch); // modal
 			S9xSaveCheatFile (S9xGetFilename (".cht", CHEAT_DIR));
+			RestoreSNESDisplay ();
 			break;
 		case ID_CHEAT_APPLY:
 			Settings.ApplyCheats = !Settings.ApplyCheats;
@@ -2350,10 +2390,14 @@ LRESULT CALLBACK WinProc(
 			GUI.InactivePause = !GUI.InactivePause;
 			break;
 		case ID_OPTIONS_SETTINGS:
+			RestoreGUIDisplay ();
 			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_EMU_SETTINGS), hWnd, DlgEmulatorProc);
+			RestoreSNESDisplay ();
 			break;
 		case ID_HELP_ABOUT:
+			RestoreGUIDisplay ();
 			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_ABOUT), hWnd, DlgAboutProc);
+			RestoreSNESDisplay ();
 			break;
 		case ID_FRAME_ADVANCE:
 			Settings.Paused = true;
@@ -2374,7 +2418,9 @@ LRESULT CALLBACK WinProc(
 			break;
 #endif
 		case IDM_ROM_INFO:
+			RestoreGUIDisplay ();
 			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_ROM_INFO), hWnd, DlgInfoProc);
+			RestoreSNESDisplay ();
 			break;
 		default:
 			if ((wParam & 0xffff) >= 0xFF00)
@@ -2409,6 +2455,7 @@ LRESULT CALLBACK WinProc(
 		S9xSetPause (PAUSE_MENU);
 		CheckMenuStates ();
 
+		SwitchToGDI();
 		DrawMenuBar(GUI.hWnd);
 		break;
 
@@ -2645,9 +2692,11 @@ LRESULT CALLBACK WinProc(
 		S9xMessage (0, 0, NetPlay.WarningMsg);
 		break;
 	case WM_USER + 1:
+		RestoreGUIDisplay ();
 		S9xRestoreWindowTitle ();
 		MessageBox (GUI.hWnd, _tFromChar(NetPlay.ErrorMsg),
 			SNES9X_NP_ERROR, MB_OK | MB_ICONSTOP);
+		RestoreSNESDisplay ();
 		break;
 	case WM_USER:
 		if (NetPlay.ActionMsg [0] == 0)
@@ -2660,7 +2709,16 @@ LRESULT CALLBACK WinProc(
 			SetWindowText (GUI.hWnd, buf);
 		}
 #if 0
-		DialogBox(g_hInst, MAKEINTRESOURCE(IDD_NETPLAYPROGRESS), hWnd, DlgNPProgress);
+		if ((int) lParam >= 0)
+		{
+			RestoreGUIDisplay ();
+			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_NETPLAYPROGRESS), hWnd, DlgNPProgress);
+		}
+		else
+		{
+			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_NETPLAYPROGRESS), hWnd, DlgNPProgress);
+			RestoreSNESDisplay ();
+		}
 #endif
 		break;
 #endif
@@ -4064,6 +4122,7 @@ static bool LoadMultiROM (const TCHAR *filename, const TCHAR *filename2)
 
 bool8 S9xLoadROMImage (const TCHAR *string)
 {
+    RestoreGUIDisplay ();
     TCHAR *buf = new TCHAR [200 + lstrlen (string)];
     _stprintf (buf, TEXT("The NetPlay server is requesting you load the following game:\n '%s'"),
 		string);
@@ -7268,6 +7327,7 @@ INT_PTR CALLBACK DlgFunky(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 
 		EnableWindow(GetDlgItem(hDlg, IDC_ASPECT), GUI.Stretch);
 
+		SendDlgItemMessage(hDlg,IDC_OUTPUTMETHOD,CB_ADDSTRING,0,(LPARAM)TEXT("DirectDraw"));
 		SendDlgItemMessage(hDlg,IDC_OUTPUTMETHOD,CB_ADDSTRING,0,(LPARAM)TEXT("Direct3D"));
 		SendDlgItemMessage(hDlg,IDC_OUTPUTMETHOD,CB_ADDSTRING,0,(LPARAM)TEXT("OpenGL"));
 		SendDlgItemMessage(hDlg,IDC_OUTPUTMETHOD,CB_SETCURSEL,(WPARAM)GUI.outputMethod,0);
@@ -7476,8 +7536,16 @@ INT_PTR CALLBACK DlgFunky(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 				if(scale == GUI.Scale)
 					break;
 
+				const int oldScaleScale = max(GetFilterScale(GUI.Scale), GetFilterScale(GUI.ScaleHiRes));
+
 //				UpdateScale(GUI.Scale, scale);
 				GUI.Scale = (RenderFilter)scale;
+
+
+				const int newScaleScale = max(GetFilterScale(GUI.Scale), GetFilterScale(GUI.ScaleHiRes));
+
+				if(oldScaleScale != newScaleScale)
+					RestoreSNESDisplay();
 
 				// refresh screen, so the user can see the new filter
 				// (assuming the dialog box isn't completely covering the game window)
@@ -7534,8 +7602,15 @@ updateFilterBox2:
 				if(scale == GUI.ScaleHiRes)
 					break;
 
+				const int oldScaleScale = max(GetFilterScale(GUI.Scale), GetFilterScale(GUI.ScaleHiRes));
+
 //				UpdateScale(GUI.Scale, scale);
 				GUI.ScaleHiRes = (RenderFilter)scale;
+
+				const int newScaleScale = max(GetFilterScale(GUI.Scale), GetFilterScale(GUI.ScaleHiRes));
+
+				if(oldScaleScale != newScaleScale)
+					RestoreSNESDisplay();
 
 				// refresh screen, so the user can see the new filter
 				// (assuming the dialog box isn't completely covering the game window)

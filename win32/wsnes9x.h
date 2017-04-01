@@ -206,6 +206,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <tchar.h>
+#include <ddraw.h>
 #include <mmsystem.h>
 #ifndef __BORLANDC__
 
@@ -286,7 +287,8 @@ enum RenderFilter{
 };
 
 enum OutputMethod {
-	DIRECT3D = 0,
+	DIRECTDRAW = 0,
+	DIRECT3D,
 	OPENGL
 };
 
@@ -328,6 +330,7 @@ struct sGUI {
 	bool EmulateFullscreen;
 	bool EmulatedFullscreen;
 	bool BilinearFilter;
+	bool LocalVidMem;
 	bool Vsync;	
 	bool shaderEnabled;
 	TCHAR D3DshaderFileName[MAX_PATH];
